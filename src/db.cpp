@@ -19,178 +19,21 @@
 #include <exception>
 #include <string_view>
 #include <iomanip>
+
 // ================================================================================
 // ================================================================================
 
-
-int createDB(const char* filename)
-{
-    sqlite3* db;
-    int exit = 0;
-
-    exit = sqlite3_open(filename, &db);
-    if (exit != SQLITE_OK){
-        std::cerr << "Error opening database: " << sqlite3_errmsg(db) << std::endl;
-        return exit;
+void DB::checkDBErrors() {
+    if( rc ){
+        // Show error message
+        std::cout << "DB Error: " << sqlite3_errmsg(db) << std::endl;
+        closeDB();
     }
-    std::cout << "Database: " << filename << " opened successfully" << std::endl;
-
-    sqlite3_close(db);
-
-    if (exit != SQLITE_OK) {
-        std::cerr << "Error closing database: " << sqlite3_errmsg(db) << std::endl;
-        return exit;
-    }
-
-    std::cout << "Database: " << filename << " closed successfully" << std::endl;
-
-    return 0;
 }
 // --------------------------------------------------------------------------------
 
-
-int createTable(const char* filename)
+int DB::callback(void* not_used, int argc, char** argv, char** azColName)
 {
-    sqlite3* db;
-
-    std::string sql = "CREATE TABLE IF NOT EXISTS PLANNER("
-    "ID INTEGER PRIMARY KEY, "
-    "TASK TEXT NOT NULL, "
-    "DUE_DATE VARCHAR(10) );";
-
-    try
-    {
-        int exit = 0;
-        exit = sqlite3_open(filename, &db);
-
-        char* messageError;
-        exit = sqlite3_exec(db, sql.c_str(), NULL, 0, &messageError);
-        if (exit != SQLITE_OK){
-            std::cerr << "Error with Create Table" << std::endl;
-            sqlite3_free(messageError);
-        }
-        else
-            std::cout << "Table created successfully" << std::endl;
-        sqlite3_close(db);
-    }
-    catch(const std::exception& e){
-        std::cerr << e.what();
-    }
-    return 0;
-}
-// --------------------------------------------------------------------------------
-
-
-int insertRow(const char* filename,
-                    std::string& task,
-                    std::string& due_date)
-{
-    sqlite3* db;
-
-    // Open the database connection
-    int exit = sqlite3_open(filename, &db);
-    if (exit != SQLITE_OK){
-        sqlite3_close(db);
-        return exit;
-    }
-
-    // Prepare SQL Statement with Placeholders
-    std::string sql = "INSERT INTO PLANNER (ID, TASK, DUE_DATE) VALUES (NULL, ?, ?);";
-    sqlite3_stmt* stmt;
-    exit = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL);
-    if (exit != SQLITE_OK){
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return exit;
-    }
-
-    // Bind Parameters
-    exit = sqlite3_bind_text(stmt, 1, task.c_str(), -1, SQLITE_STATIC);
-    if (exit != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return exit;
-    }
-
-    exit = sqlite3_bind_text(stmt, 2, due_date.c_str(), -1, SQLITE_STATIC);
-    if (exit != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return exit;
-    }
-
-    // Execute the statement
-    exit = sqlite3_step(stmt);
-    if(exit != SQLITE_DONE){
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return exit;
-    }
-
-    //Finalize the statement and close db
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-
-    return SQLITE_OK;
-}
-// --------------------------------------------------------------------------------
-
-
-int deleteRow(const char* filename, int& row_num)
-{
-    sqlite3* db;
-
-    int exit = sqlite3_open(filename, &db);
-    if (exit != SQLITE_OK){
-        sqlite3_close(db);
-        return exit;
-    }
-
-    std::string sql = "DELETE FROM PLANNER WHERE ID = (?);";
-    sqlite3_stmt* stmt;
-    exit = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL);
-    if (exit != SQLITE_OK){
-        std::cerr << "Error DELETE" << std::endl;
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return exit;
-    }
-
-    exit = sqlite3_bind_int(stmt, 1, row_num);
-    if (exit != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return exit;
-    }
-
-    // Execute the statement
-    exit = sqlite3_step(stmt);
-    if(exit != SQLITE_DONE){
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return exit;
-    }
-
-    //Finalize the statement and close db
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-
-    return SQLITE_OK;
-
-
-}
-// --------------------------------------------------------------------------------
-
-
-int callback(void* not_used, int argc, char** argv, char** azColName)
-{
-    // for (int i = 0; i < argc; i++){
-    //     std::cout << azColName[i] << ": " << argv[i] << std::endl;
-    // }
-    // std::cout << std::endl;
-
-    // return 0;
-
      // Print column headers
     static bool headersPrinted = false;
 
@@ -218,23 +61,223 @@ int callback(void* not_used, int argc, char** argv, char** azColName)
     return 0;
 }
 // --------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------
 
 
-int printTable(const char* filename)
+ //   public:
+
+DB::DB(std::string filename) : 
+    filename(filename),
+    error_msg(nullptr),
+    rc(0) 
 {
-    sqlite3* db;
+    rc = sqlite3_open(filename.c_str(), &db);
+    checkDBErrors();
+}
+// --------------------------------------------------------------------------------
+DB::~DB()
+{
+    DB::closeDB();
+    std::cout << "Planner has been successfully closed.\n";
+}
+// --------------------------------------------------------------------------------
 
-    // Open the database
-    int exit = sqlite3_open(filename, &db);
-    if (exit != SQLITE_OK){
+void DB::closeDB(){
+    if (db) {
         sqlite3_close(db);
-        return exit;
+        db = nullptr;
+    }
+}
+// --------------------------------------------------------------------------------
+
+int DB::createPlanner() 
+{
+    std::string sql = "CREATE TABLE IF NOT EXISTS PLANNER("
+                        "ID INTEGER PRIMARY KEY, "
+                        "TASK TEXT NOT NULL, "
+                        "DUE_DATE VARCHAR(10) );";
+
+rc = sqlite3_exec(db, sql.c_str(), NULL, 0, &error_msg);
+if (rc != SQLITE_OK) {
+        std::cerr << "Error creating table: " << sqlite3_errmsg(db) << std::endl;
+        closeDB(); 
+        return rc; 
+    }
+std::cout << "Table created successfully" << std::endl;
+return SQLITE_OK;
+}
+// --------------------------------------------------------------------------------
+
+
+int DB::insertTask(std::string& task, std::string& due_date)
+{
+    // Prepare SQL Statement with Placeholders
+    std::string sql = "INSERT INTO PLANNER (ID, TASK, DUE_DATE) VALUES (NULL, ?, ?);";
+    sqlite3_stmt* stmt;
+    rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        // Handle error
+        std::cerr << "Error preparing SQL statement: " << sqlite3_errmsg(db) << std::endl;
+        return rc; // Return error code
     }
 
+    // Bind Parameters
+    rc = sqlite3_bind_text(stmt, 1, task.c_str(), -1, SQLITE_STATIC);
+    if (rc != SQLITE_OK) {
+        // Handle error
+        std::cerr << "Error binding parameter 1: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt); // Clean up resources
+        return rc; // Return error code
+    }
+
+    rc = sqlite3_bind_text(stmt, 2, due_date.c_str(), -1, SQLITE_STATIC);
+    if (rc != SQLITE_OK) {
+        // Handle error
+        std::cerr << "Error binding parameter 1: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt); // Clean up resources
+        return rc; // Return error code
+    }
+
+    // Execute the statement
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        // Handle error
+        std::cerr << "Error executing SQL statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt); // Clean up resources
+        return rc; // Return error code
+    }
+
+    //Finalize the statement
+    sqlite3_finalize(stmt);
+    std::cout << "Row inserted successfully\n";
+    return SQLITE_OK;
+}   
+// --------------------------------------------------------------------------------
+
+int DB::completeTask(int row_num)
+{
+    std::string sql_delete = "DELETE FROM PLANNER WHERE ID = (?);";
+    sqlite3_stmt* stmt_delete;
+    rc = sqlite3_prepare_v2(db, sql_delete.c_str(), -1, &stmt_delete, NULL);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error preparing delete statement: " << sqlite3_errmsg(db) << std::endl;
+        return rc;
+    }
+
+    rc = sqlite3_bind_int(stmt_delete, 1, row_num);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error binding parameter for delete statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt_delete);
+        return rc;
+    }
+
+    rc = sqlite3_step(stmt_delete);
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Error executing delete statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt_delete);
+        return rc;
+    }
+
+    sqlite3_finalize(stmt_delete);
+
+    // Update the IDs of remaining rows
+    std::string sql_update = "UPDATE PLANNER SET ID = ID - 1 WHERE ID > ?;";
+    sqlite3_stmt* stmt_update;
+    rc = sqlite3_prepare_v2(db, sql_update.c_str(), -1, &stmt_update, NULL);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error preparing update statement: " << sqlite3_errmsg(db) << std::endl;
+        return rc;
+    }
+
+    rc = sqlite3_bind_int(stmt_update, 1, row_num);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error binding parameter for update statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt_update);
+        return rc;
+    }
+
+    rc = sqlite3_step(stmt_update);
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Error executing update statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt_update);
+        return rc;
+    }
+
+    sqlite3_finalize(stmt_update);
+    std::cout << "Delete successful.\n";
+
+    return SQLITE_OK;
+}
+// --------------------------------------------------------------------------------
+
+int DB::printPlanner()
+{ 
     std::string sql = "SELECT * FROM PLANNER;";
 
     sqlite3_exec(db, sql.c_str(), callback, NULL, NULL);
 
     return 0;
-
 }
+// --------------------------------------------------------------------------------
+
+int DB::updatePlanner(UpdateRow& updated_row)
+{
+ std::string sql = "UPDATE PLANNER SET " + updated_row.set_column_name + " = ? WHERE " +
+                      updated_row.id_column_name + " = ?;";
+
+    // Prepare SQL Statement with Placeholders
+    sqlite3_stmt* stmt;
+    rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error preparing update statement: " << sqlite3_errmsg(db) << std::endl;
+        return rc;
+    }
+
+    // Bind Parameters
+    rc = sqlite3_bind_text(stmt, 1, updated_row.set_new_value.c_str(), -1, SQLITE_STATIC);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error binding parameter for update statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return rc;
+    }
+
+    rc = sqlite3_bind_text(stmt, 2, updated_row.id_column_value.c_str(), -1, SQLITE_STATIC);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error binding parameter for update statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return rc;
+    }
+
+    // Execute the statement
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Error executing update statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_finalize(stmt);
+        return rc;
+    }
+
+    //Finalize the statement and close db
+    sqlite3_finalize(stmt);
+    std::cout << "Update successful\n";
+
+    return SQLITE_OK;       
+}
+// --------------------------------------------------------------------------------
+
+int DB::bulkInsertTasks(std::vector<Task>& tasks)
+{
+    for(auto& task : tasks)
+    {
+        rc = insertTask(task.task, task.due_date);
+        // checkDBErrors();
+        if(rc != SQLITE_OK) {
+            std::cerr << "Error inserting task: " << sqlite3_errmsg(db) << std::endl;
+            return rc; // Return the error code
+        }
+    }
+    std::cout << "Bulk insert successful\n";   
+    return SQLITE_OK;
+}
+// ================================================================================
+// ================================================================================
+//eof

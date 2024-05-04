@@ -1,17 +1,72 @@
 #ifndef DB_H
 #define DB_H
 #include <string>
+#include <vector>
+#include "/usr/include/sqlite3.h"
+// ================================================================================
+// ================================================================================
 
-int createDB(const char* filename);
 
-int createTable(const char* filename);
+struct UpdateRow {
+    std::string set_column_name;
+    std::string set_new_value;
+    std::string id_column_name;
+    std::string id_column_value;
+};
+// --------------------------------------------------------------------------------
 
-int insertRow(const char* filename, std::string& task, std::string& due_date);
 
-int deleteRow(const char* filename, int& row_num);
+struct Task{
+    std::string task;
+    std::string due_date;
+};
+// ================================================================================
 
-int callback(void* not_used, int argc, char** argv, char** azColName);
 
-int printTable(const char* filename);
+class DB
+{
+    private:
+        sqlite3* db;
+        char* error_msg;
+        int rc;
+        std::string filename;
+// --------------------------------------------------------------------------------
 
+        void checkDBErrors(); 
+// --------------------------------------------------------------------------------
+
+       static int callback(void* not_used, int argc, char** argv, char** azColName);
+// ================================================================================
+
+    public:
+        DB(std::string filename);
+// --------------------------------------------------------------------------------
+
+        ~DB();
+// --------------------------------------------------------------------------------
+
+        void closeDB();
+// --------------------------------------------------------------------------------
+        
+        int createPlanner();
+// --------------------------------------------------------------------------------
+        
+        int insertTask(std::string& task, std::string& due_date);
+// --------------------------------------------------------------------------------
+       
+        int completeTask(int row_num);
+// --------------------------------------------------------------------------------
+       
+        int printPlanner();
+// --------------------------------------------------------------------------------
+        
+        int updatePlanner(UpdateRow& updated_row);
+// --------------------------------------------------------------------------------
+        
+        int bulkInsertTasks(std::vector<Task>& tasks);
+// --------------------------------------------------------------------------------
+};
 #endif
+// ================================================================================
+// ================================================================================
+//eof
