@@ -14,10 +14,8 @@
 #include "include/db.hpp"
 #include <stdio.h>
 #include <iostream>
-#include <string>
 #include "/usr/include/sqlite3.h"
 #include <exception>
-#include <string_view>
 #include <iomanip>
 
 // ================================================================================
